@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TB Data Timeline Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: white;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            text-align: center;
+            font-size: 40px; 
+            color:black;
+            margin-top: 40px;
+        }
+        .controls {
+            text-align: center;
+            margin: 20px;
+        }
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            border-radius: 5px;
+            padding: 10px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        svg {
+            border: 1px solid #ccc;
+        }
+        .axis-label {
+            font-size: 16px;
+            font-weight: bold;
+        }
+        .color-picker {
+            margin: 10px;
+        }
+        .back-button {
+            position: fixed;
+            top: 10px;         /* Adjust top to prevent overlap */
+            right: 10px;       /* Adjust right to prevent overlap */
+            font-size: 24px;   /* Size of the cross */
+            cursor: pointer;
+            z-index: 1000;     /* Ensure it stays above other elements */
+            background-color: transparent;
+            border: none;
+            color: #ffffff;    /* Set the cross color to white */
+        }
+    </style>
+</head>
+<body>
+    <h1>TB Data Timeline Visualization (1980 - 2021)</h1>
+    <div id="back-button" class="back-button">❌</div>
+    <div class="controls">
+        <button id="play-button">Play</button>
+        <label for="continent-select">Continent:</label>
+        <select id="continent-select">
+            <option value="All">All Continents</option>
+        </select>
+        <label for="country-select">Country:</label>
+        <select id="country-select">
+            <option value="All">All Countries</option>
+        </select>
+        <label for="relationship-select">Relationship:</label>
+        <select id="relationship-select">
+            <option value="All">All Relationship Types</option>
+        </select>
+        <label for="year-select">Year:</label>
+        <select id="year-select">
+            <option value="1980">1980</option>
+        </select>
+        <label for="color-scheme">Color Scheme:</label>
+        <select id="color-scheme" class="color-picker">
+            <option value="schemeDark2">Dark2</option>
+            <option value="schemeCategory10">Category10</option>
+            <option value="schemeSet1">Set1</option>
+        </select>
+    </div>
+    <div id="chart"></div>
+    <div id="tooltip" class="tooltip"></div>
+    <!-- Embed condition script -->
+    <script>
+        if (window.location.search.includes('embed=true')) {
+            document.getElementById('back-button').style.display = 'none';
+        }
+    </script>
+
+    <script>
+        document.getElementById("back-button").addEventListener("click", function() {
+        window.location.href = "dashboard.html";  // Use relative path to navigate to dashboard
+    });
+        const margin = { top: 50, right: 30, bottom: 70, left: 90 };
+        const width = 960 - margin.left - margin.right;
+        const height = 600 - margin.top - margin.bottom;
+
+        const svg = d3.select("#chart")
+            .append("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        const tooltip = d3.select("#tooltip");
+
+        // Scales
+        const xScale = d3.scaleLinear().range([0, width]);
+        const yScale = d3.scaleLinear().range([height, 0]);
+        const sizeScale = d3.scaleSqrt().range([5, 40]); // Circle size
+        let colorScale = d3.scaleOrdinal(d3.schemeDark2); // Default color scheme
+
+        // Axes
+        const xAxis = svg.append("g").attr("transform", `translate(0,${height})`);
+        const yAxis = svg.append("g");
+
+        // Axis Labels
+        svg.append("text")
+            .attr("class", "axis-label")
+            .attr("x", width / 2)
+            .attr("y", height + 50)
+            .attr("text-anchor", "middle")
+            .text("People Affected");
+
+        svg.append("text")
+            .attr("class", "axis-label")
+            .attr("transform", "rotate(-90)")
+            .attr("x", -height / 2)
+            .attr("y", -60)
+            .attr("text-anchor", "middle")
+            .text("Total Deaths");
+
+        // Controls
+        const playButton = document.getElementById("play-button");
+        const continentSelect = document.getElementById("continent-select");
+        const countrySelect = document.getElementById("country-select");
+        const relationshipSelect = document.getElementById("relationship-select");
+        const yearSelect = document.getElementById("year-select");
+        const colorSchemePicker = document.getElementById("color-scheme");
+
+        let isPlaying = false;
+        let interval;
+        let currentYear = 1980;
+
+        // Function to assign continent based on longitude and latitude
+        function assignContinent(lat, lon) {
+            if (lat >= -60 && lat <= 90 && lon >= -180 && lon <= -30) return "North America";
+            if (lat >= -60 && lat <= 90 && lon >= -30 && lon <= 60) return "Europe";
+            if (lat >= -35 && lat <= 35 && lon >= -20 && lon <= 55) return "Africa";
+            if (lat >= 10 && lat <= 90 && lon >= 60 && lon <= 180) return "Asia";
+            if (lat <= -10 && lat >= -60 && lon >= 110 && lon <= 180) return "Oceania";
+            if (lat <= 0 && lon >= -180 && lon <= 180) return "South America";
+            return "Other";
+        }
+
+        // Load data
+        d3.csv('./updated_tb_dataset.csv').then(data => {
+            // Parse data and assign continents
+            data.forEach(d => {
+                d.year = +d.year;
+                d.total_deaths = +d.Deaths;
+                d.people_affected = +d['People Affected'];
+                d.latitude = +d.latitude;
+                d.longitude = +d.longitude;
+                d.timestamp = new Date(d.Timestamp);
+                d.continent = assignContinent(d.latitude, d.longitude); // Assign continent
+            });
+
+            // Populate continent dropdown
+            const continents = Array.from(new Set(data.map(d => d.continent)));
+            continents.forEach(continent => {
+                const option = document.createElement("option");
+                option.value = continent;
+                option.textContent = continent;
+                continentSelect.appendChild(option);
+            });
+
+            // Populate country and relationship dropdowns
+            const countries = Array.from(new Set(data.map(d => d.country)));
+            countries.forEach(country => {
+                const option = document.createElement("option");
+                option.value = country;
+                option.textContent = country;
+                countrySelect.appendChild(option);
+            });
+
+            const relationshipTypes = Array.from(new Set(data.map(d => d['Relationship Type'])));
+            relationshipTypes.forEach(type => {
+                const option = document.createElement("option");
+                option.value = type;
+                option.textContent = type;
+                relationshipSelect.appendChild(option);
+            });
+
+            const years = Array.from(new Set(data.map(d => d.year))).sort((a, b) => a - b);
+            years.forEach(year => {
+                const option = document.createElement("option");
+                option.value = year;
+                option.textContent = year;
+                yearSelect.appendChild(option);
+            });
+
+            // Set scale domains
+            xScale.domain(d3.extent(data, d => d.people_affected)).nice();
+            yScale.domain([0, d3.max(data, d => d.total_deaths)]).nice();
+            sizeScale.domain(d3.extent(data, d => d.total_deaths));
+
+            // Draw axes
+            xAxis.call(d3.axisBottom(xScale).ticks(10, "s"));
+            yAxis.call(d3.axisLeft(yScale).ticks(10, "s"));
+
+            // Draw circles
+            const circles = svg.selectAll("circle")
+                .data(data.filter(d => d.year === currentYear)) // Start with 1980
+                .enter()
+                .append("circle")
+                .attr("cx", d => xScale(d.people_affected))
+                .attr("cy", d => yScale(d.total_deaths))
+                .attr("r", d => sizeScale(d.total_deaths))
+                .attr("fill", d => colorScale(d.country))
+                .attr("opacity", 0.9)
+                .on("mouseover", (event, d) => {
+                    tooltip.style("opacity", 1)
+                        .style("left", `${event.pageX + 10}px`)
+                        .style("top", `${event.pageY + 10}px`)
+                        .html(`
+                            <strong>Country:</strong> ${d.country}<br>
+                            <strong>Continent:</strong> ${d.continent}<br>
+                            <strong>Year:</strong> ${d.year}<br>
+                            <strong>Relationship Type:</strong> ${d['Relationship Type']}<br>
+                            <strong>Total Deaths:</strong> ${d.total_deaths}<br>
+                            <strong>People Affected:</strong> ${d.people_affected}<br>
+                            <strong>Cause:</strong> ${d['TB Cause']}
+                        `);
+                })
+                .on("mouseout", () => {
+                    tooltip.style("opacity", 0);
+                });
+
+                function updateVisualization(year, continent, country, relationshipType) {
+                    // Filter the data based on the current filters
+                    const filteredData = data.filter(d =>
+                        d.year === year &&
+                        (continent === "All" || d.continent === continent) &&
+                        (country === "All" || d.country === country) &&
+                        (relationshipType === "All" || d['Relationship Type'] === relationshipType)
+                    );
+                
+                    // Safely bind the filtered data to the circles
+                    const circles = svg.selectAll("circle")
+                        .data(filteredData, d => d.country); // Use a key function (d.country) for better binding
+                
+                    // Handle the enter selection
+                    circles.enter()
+                        .append("circle")
+                        .attr("cx", d => xScale(d.people_affected))
+                        .attr("cy", d => yScale(d.total_deaths))
+                        .attr("r", d => sizeScale(d.total_deaths))
+                        .attr("fill", d => colorScale(d.country))
+                        .attr("opacity", 0.9)
+                        .on("mouseover", (event, d) => {
+                            tooltip.style("opacity", 1)
+                                .style("left", `${event.pageX + 10}px`)
+                                .style("top", `${event.pageY + 10}px`)
+                                .html(`
+                                    <strong>Country:</strong> ${d.country}<br>
+                                    <strong>Continent:</strong> ${d.continent}<br>
+                                    <strong>Year:</strong> ${d.year}<br>
+                                    <strong>Relationship Type:</strong> ${d['Relationship Type']}<br>
+                                    <strong>Total Deaths:</strong> ${d.total_deaths}<br>
+                                    <strong>People Affected:</strong> ${d.people_affected}<br>
+                                    <strong>Cause:</strong> ${d['TB Cause']}
+                                `);
+                        })
+                        .on("mouseout", () => {
+                            tooltip.style("opacity", 0);
+                        });
+                
+                    // Handle the update selection
+                    circles.transition().duration(500)
+                        .attr("cx", d => xScale(d.people_affected))
+                        .attr("cy", d => yScale(d.total_deaths))
+                        .attr("r", d => sizeScale(d.total_deaths))
+                        .attr("fill", d => colorScale(d.country));
+                
+                    // Handle the exit selection
+                    circles.exit()
+                        .transition().duration(500)
+                        .attr("r", 0) // Shrink the circles to 0 radius before removing
+                        .remove();
+                }
+                
+
+            // Function to pause animation
+            function pauseAnimation() {
+                if (isPlaying) {
+                    clearInterval(interval);
+                    playButton.textContent = "Play";
+                    isPlaying = false;
+                }
+            }
+
+            // Function to play animation
+            function playAnimation() {
+                if (isPlaying) {
+                    clearInterval(interval);
+                    playButton.textContent = "Play";
+                } else {
+                    interval = setInterval(() => {
+                        if (currentYear > 2021) {
+                            clearInterval(interval);
+                            playButton.textContent = "Play";
+                            isPlaying = false;
+                            return;
+                        }
+                        updateVisualization(currentYear, continentSelect.value, countrySelect.value, relationshipSelect.value);
+                        yearSelect.value = currentYear;
+                        currentYear++;
+                    }, 1000);
+                    playButton.textContent = "Pause";
+                }
+                isPlaying = !isPlaying;
+            }
+
+            // Event Listeners
+            playButton.addEventListener("click", playAnimation);
+            continentSelect.addEventListener("change", () => {
+                pauseAnimation(); // Pause animation when continent changes
+                updateVisualization(currentYear, continentSelect.value, countrySelect.value, relationshipSelect.value);
+            });
+            countrySelect.addEventListener("change", () => {
+                pauseAnimation(); // Pause animation when country changes
+                updateVisualization(currentYear, continentSelect.value, countrySelect.value, relationshipSelect.value);
+            });
+            relationshipSelect.addEventListener("change", () => {
+                pauseAnimation(); // Pause animation when relationship type changes
+                updateVisualization(currentYear, continentSelect.value, countrySelect.value, relationshipSelect.value);
+            });
+            yearSelect.addEventListener("change", () => {
+                pauseAnimation(); // Pause animation when year changes
+                currentYear = +yearSelect.value;
+                updateVisualization(currentYear, continentSelect.value, countrySelect.value, relationshipSelect.value);
+            });
+            colorSchemePicker.addEventListener("change", () => {
+                pauseAnimation(); // Pause animation when color scheme changes
+                colorScale = d3.scaleOrdinal(d3[colorSchemePicker.value]);
+                updateVisualization(currentYear, continentSelect.value, countrySelect.value, relationshipSelect.value);
+            });
+
+            // Initial visualization
+            updateVisualization(currentYear, "All", "All", "All");
+
+    });
+</script>
+</body>
+</html>

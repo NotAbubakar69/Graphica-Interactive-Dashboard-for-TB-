@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Choropleth Map</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://unpkg.com/topojson@3"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #121212; /* Dark background */
+            color: #ffffff; /* Light text */
+        }
+        h1 {
+            text-align: center;
+            font-size: 50px;
+        }
+        .controls {
+            text-align: center;
+            margin: 20px;
+        }
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            border-radius: 5px;
+            padding: 10px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        svg {
+            display: block;
+            margin: auto;
+            background-color: #2e2e2e; /* Dark map background */
+        }
+        .back-button {
+            position: fixed;
+            top: 10px;         /* Adjust top to prevent overlap */
+            right: 10px;       /* Adjust right to prevent overlap */
+            font-size: 24px;   /* Size of the cross */
+            cursor: pointer;
+            z-index: 1000;     /* Ensure it stays above other elements */
+            background-color: transparent;
+            border: none;
+            color: #ffffff;    /* Set the cross color to white */
+        }
+    </style>
+</head>
+<body>
+    <h1>Interactive Choropleth Map</h1>
+    <div id="back-button" class="back-button">❌</div>
+    <div class="controls">
+        <label for="year-select">Year:</label>
+        <select id="year-select">
+            <option value="All">All Years</option>
+        </select>
+        <label for="country-select">Country:</label>
+        <select id="country-select">
+            <option value="All">All Countries</option>
+        </select>
+        <label for="relationship-select">Relationship Type:</label>
+        <select id="relationship-select">
+            <option value="All">All Relationship Types</option>
+        </select>
+    </div>
+    <div id="map"></div>
+    <div id="tooltip" class="tooltip"></div>
+    
+    <!-- Embed condition script -->
+    <script>
+        if (window.location.search.includes('embed=true')) {
+            document.getElementById('back-button').style.display = 'none';
+        }
+    </script>
+    
+    <script>
+        document.getElementById("back-button").addEventListener("click", function() {
+        window.location.href = "dashboard.html";  // Use relative path to navigate to dashboard
+    });
+    
+        const width = 1200, height = 750;
+        const svg = d3.select("#map").append("svg")
+            .attr("width", width)
+            .attr("height", height);
+
+        const projection = d3.geoMercator()
+            .scale(150)
+            .translate([width / 2, height / 1.5]);
+
+        const path = d3.geoPath().projection(projection);
+        const tooltip = d3.select("#tooltip");
+
+        const yearSelect = document.getElementById("year-select");
+        const countrySelect = document.getElementById("country-select");
+        const relationshipSelect = document.getElementById("relationship-select");
+
+        const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
+
+        // Load map and data
+        Promise.all([
+            d3.json("https://unpkg.com/world-atlas@2.0.2/countries-110m.json"), // World map data
+            d3.csv("./updated_tb_dataset.csv") // Your dataset
+        ]).then(([world, data]) => {
+            data.forEach(d => {
+                d.year = +d.year;
+                d.total_deaths = +d.Deaths;
+                d.people_affected = +d['People Affected'];
+                d.relationship = d['Relationship Type']; // Ensure your data includes this
+            });
+
+            const countriesGeo = topojson.feature(world, world.objects.countries).features;
+            initializeDropdowns(data);
+
+            const mapGroup = svg.append("g").selectAll("path")
+                .data(countriesGeo)
+                .enter().append("path")
+                .attr("d", path)
+                .attr("fill", "#444") // Default fill
+                .attr("stroke", "#fff")
+                .attr("stroke-width", 0.5)
+                .on("mouseover", (event, d) => {
+                    const filters = {
+                        year: +yearSelect.value,
+                        country: countrySelect.value,
+                        relationship: relationshipSelect.value
+                    };
+                    const countryData = findCountryData(data, d.properties.name, filters);
+                    if (countryData) {
+                        tooltip.style("opacity", 1)
+                            .style("left", `${event.pageX + 10}px`)
+                            .style("top", `${event.pageY + 10}px`)
+                            .html(`
+                                <strong>Country:</strong> ${countryData.country}<br>
+                                <strong>Year:</strong> ${countryData.year}<br>
+                                <strong>Relationship Type:</strong> ${countryData.relationship}<br>
+                                <strong>Total Deaths:</strong> ${countryData.total_deaths}<br>
+                                <strong>People Affected:</strong> ${countryData['People Affected']}
+                            `);
+                    }
+                })
+                .on("mouseout", () => {
+                    tooltip.style("opacity", 0);
+                });
+
+            yearSelect.addEventListener("change", () => updateMap(data, countriesGeo, mapGroup));
+            countrySelect.addEventListener("change", () => updateMap(data, countriesGeo, mapGroup));
+            relationshipSelect.addEventListener("change", () => updateMap(data, countriesGeo, mapGroup));
+
+            function initializeDropdowns(data) {
+                const years = Array.from(new Set(data.map(d => d.year))).sort();
+                years.forEach(year => {
+                    const option = document.createElement("option");
+                    option.value = year;
+                    option.textContent = year;
+                    yearSelect.appendChild(option);
+                });
+
+                const countries = Array.from(new Set(data.map(d => d.country))).sort();
+                countries.forEach(country => {
+                    const option = document.createElement("option");
+                    option.value = country;
+                    option.textContent = country;
+                    countrySelect.appendChild(option);
+                });
+
+                const relationships = Array.from(new Set(data.map(d => d.relationship))).sort();
+                relationships.forEach(relationship => {
+                    const option = document.createElement("option");
+                    option.value = relationship;
+                    option.textContent = relationship;
+                    relationshipSelect.appendChild(option);
+                });
+            }
+
+            function updateMap(data, countriesGeo, mapGroup) {
+                const selectedYear = yearSelect.value;
+                const selectedCountry = countrySelect.value;
+                const selectedRelationship = relationshipSelect.value;
+
+                mapGroup.attr("fill", d => {
+                    const countryData = data.find(p => p.country === d.properties.name &&
+                        (selectedYear === "All" || p.year === parseInt(selectedYear)) &&
+                        (selectedCountry === "All" || d.properties.name === selectedCountry) &&
+                        (selectedRelationship === "All" || p.relationship === selectedRelationship));
+                    return countryData ? colorScale(countryData.relationship) : "#444";
+                });
+            }
+
+            function findCountryData(data, countryName, filters) {
+                return data.find(p =>
+                    p.country === countryName &&
+                    (filters.year === "All" || p.year === filters.year) &&
+                    (filters.country === "All" || p.country === filters.country) &&
+                    (filters.relationship === "All" || p.relationship === filters.relationship));
+            }
+        }).catch(error => {
+            console.error("Error loading data:", error);
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Data Dashboard</title>
+    <style>
+        /* General body styles */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+            transition: margin-left .5s;
+        }
+
+        /* Header styles */
+        header {
+            background-color: #333;
+            color: white;
+            padding: 3px 0;
+            font-size: 24px;
+            text-align: center;
+        }
+
+        /* Menu button */
+        .menu-btn {
+            font-size: 30px;
+            cursor: pointer;
+            position: fixed;
+            left: 10px;
+            top: 10px;
+            z-index: 1;
+            color: #ffffff;
+        }
+
+        /* Left menu (hidden by default) */
+        .left-menu {
+            height: 100%;
+            width: 250px;
+            position: fixed;
+            top: 0;
+            left: -250px;
+            background-color: #333;
+            padding-top: 60px;
+            overflow-y: auto;
+            transition: 0.3s;
+            z-index: 2;
+            text-align: center; /* Center-align the text */
+        }
+
+        /* Links inside the left menu - making them look like buttons */
+        .left-menu a {
+            padding: 15px 20px;
+            text-decoration: none;
+            font-size: 18px;
+            color: #fff;
+            display: block;
+            border-radius: 8px;
+            margin: 10px 0; /* Adds space between buttons */
+            background-color: #444; /* Button-like background */
+            transition: 0.3s;
+            font-weight: bold; /* Make text bold */
+            text-align: center; /* Center align text */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2); /* Adds shadow for popped-up effect */
+        }
+
+        /* Hover effect for buttons */
+        .left-menu a:hover {
+            background-color: #575757; /* Darken background on hover */
+            box-shadow: 0 8px 12px rgba(0, 0, 0, 0.3); /* Larger shadow on hover */
+            transform: translateY(-4px); /* Lift the button on hover */
+        }
+
+        /* Active button style (pressed effect) */
+        .left-menu a.active {
+            background-color: #d4a017; /* Change to gold when pressed */
+            transform: translateY(2px); /* Simulate the press effect */
+        }
+
+        /* Close button for the menu */
+        .close-menu-btn {
+            position: absolute;
+            top: 20px;
+            right: 25px;
+            font-size: 36px;
+            color: #fff;
+            cursor: pointer;
+        }
+
+        .menu-text {
+            position: absolute;
+            top: 30px;
+            left: 15px;
+            color: #fff;
+            font-size: 20px;
+            font-weight: bold;
+        }
+
+        /* Container for visualizations */
+        .iframe-container {
+            margin-top: 30px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); /* Responsive grid */
+            gap: 25px;
+            padding: 0 20px;
+            width: 100%;
+            height: 80vh; /* Ensure full viewport height */
+            overflow: hidden; /* Prevent overflow of content */
+        }
+
+        /* Each iframe box styling */
+        .iframe-box {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s;
+            cursor: pointer;
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .iframe-box iframe {
+            width: 100%;
+            height: 100%; /* Make iframe fill the box */
+            border: none;
+            transition: transform 0.3s;
+        }
+
+        /* Hover effect to expand iframe box */
+        .iframe-box:hover {
+            transform: scale(1.05);
+        }
+
+        .iframe-box:hover iframe {
+            transform: scale(1.05);
+        }
+        /* Footer styles */
+        footer {
+            background-color: #333;
+            color: white;
+            text-align: center;
+            padding: 20px 0;
+            position: relative;
+            bottom: 0;
+            width: 100%;
+            margin-top: 20px; /* Adds space between footer and last content */
+        }
+
+        footer p {
+            font-size: 14px;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Interactive Data Dashboard</h1>
+    </header>
+
+    <!-- Menu Button -->
+    <span class="menu-btn" onclick="openMenu()">&#9776;</span>
+
+    <!-- Left Menu -->
+    <div id="leftMenu" class="left-menu">
+        <span class="close-menu-btn" onclick="closeMenu()">×</span>
+        <div class="menu-text">Menu</div>
+        <a href="#" onclick="openVisualization('index.html')">Graph 1: Interactive Force Directed Graph</a>
+        <a href="#" onclick="openVisualization('index2.html')">Graph 2: Interactive Choropleth Map</a>
+        <a href="#" onclick="openVisualization('index3.html')">Graph 3: TB Data Visualization</a>
+        <a href="#" onclick="openVisualization('index4.html')">Graph 4: Hierarchical Tree Map</a>
+        <a href="#" onclick="openVisualization('index5.html')">Graph 5: Hierarchical Sunburst Chart</a>
+    </div>
+
+    <!-- Visualizations Container -->
+    <div class="iframe-container">
+        <!-- Real-Time Visualizations with Live Graphs -->
+        <div class="iframe-box">
+            <iframe src="index.html?embed=true" title="Force Directed Graph"></iframe>
+        </div>
+        <div class="iframe-box">
+            <iframe src="index2.html?embed=true" title="Choropleth Map"></iframe>
+        </div>
+        <div class="iframe-box">
+            <iframe src="index3.html?embed=true" title="TB Data Visualization"></iframe>
+        </div>
+        <div class="iframe-box">
+            <iframe src="index4.html?embed=true" title="Hierarchical Tree Map"></iframe>
+        </div>
+        <div class="iframe-box">
+            <iframe src="index5.html?embed=true" title="Hierarchical Sunburst Chart"></iframe>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2024 Interactive Dashboard | All Rights Reserved</p>
+        <p>                          </p>
+        <p>M Abubakar Nadeem 22I-2003</p>
+        <p>Sahil Kumar 22I-2048</p>
+        <p>Meher Amir 22I-1973</p>
+    </footer>
+
+    <script>
+        // Function to open the left menu
+        function openMenu() {
+            document.getElementById("leftMenu").style.left = "0";
+        }
+
+        // Function to close the left menu
+        function closeMenu() {
+            document.getElementById("leftMenu").style.left = "-250px";
+        }
+
+        // Function to open a specific visualization in full page and highlight the active button
+        function openVisualization(file) {
+            // Remove 'active' class from all menu links
+            const links = document.querySelectorAll('.left-menu a');
+            links.forEach(link => link.classList.remove('active'));
+
+            // Add 'active' class to the clicked link
+            const clickedLink = Array.from(links).find(link => link.textContent.includes(file.split('.')[0]));
+            if (clickedLink) {
+                clickedLink.classList.add('active');
+            }
+
+            // Redirect to the selected visualization
+            window.location.replace(file);
+        }
+
+        // Function to open the modal with a specific visualization
+        function openModal(file) {
+            const modal = document.getElementById("myModal");
+            const modalIframe = document.getElementById("modalIframe");
+
+            modalIframe.src = file;
+            modal.style.display = "flex";
+        }
+
+        // Close the modal when clicking the close button
+        document.getElementById("closeModal").onclick = function() {
+            const modal = document.getElementById("myModal");
+            const modalIframe = document.getElementById("modalIframe");
+            modal.style.display = "none";
+            modalIframe.src = ""; // Stop iframe content when modal is closed
+        }
+
+        // Close modal if clicking outside of it
+        window.onclick = function(event) {
+            const modal = document.getElementById("myModal");
+            const modalIframe = document.getElementById("modalIframe");
+            if (event.target == modal) {
+                modal.style.display = "none";
+                modalIframe.src = ""; // Stop iframe content when modal is closed
+            }
+        }
+
+        // Function to ensure iframes are responsive
+        const iframeElements = document.querySelectorAll('iframe');
+        iframeElements.forEach(iframe => {
+            const iframeSrc = iframe.getAttribute('src');
+            if (iframeSrc.includes('?embed=true')) {
+                const iframeDocument = iframe.contentWindow.document;
+                // Hide specific elements for embedded mode
+                if (iframeDocument.querySelector('.select-node-button')) {
+                    iframeDocument.querySelector('.select-node-button').style.display = 'none';
+                }
+                if (iframeDocument.querySelector('#back-button')) {
+                    iframeDocument.querySelector('#back-button').style.display = 'none';
+                }
+            }
+        });
+    </script>
+</body>
+</html>

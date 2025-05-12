@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <title>Interactive Force-Directed Graph</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #121212;
+            color: #ffffff;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #page-title {
+            font-size: 40px;  /* Font size of the title */
+            color: #ffffff;
+            font-weight: bold;
+            margin-top: 30px;  /* Adds space above the title */
+            margin-bottom: 30px;  /* Adds space between title and graph */
+        }
+
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            border-radius: 5px;
+            padding: 10px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        svg {
+            display: block;
+            margin: auto;
+            background-color: #2e2e2e;
+        }
+        .details {
+            position: fixed;
+            top: 20px;
+            left: 20px;  /* Move it to the left side of the screen */
+            background: rgba(255, 255, 255, 0.8);
+            color: black;
+            border-radius: 5px;
+            padding: 10px;
+            display: none;
+            z-index: 999;  /* Ensure it stays above other elements */
+            width: 250px;  /* Adjust the width as needed */
+        }
+        .select-node-button {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: #ffffff;
+            color: black;
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .node-list {
+            position: fixed;
+            bottom: 80px;
+            left: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            background: #ffffff;
+            color: black;
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
+        .node-list div {
+            margin-bottom: 5px;
+            cursor: pointer;
+            padding: 5px;
+            border-radius: 3px;
+        }
+        .node-list div:hover {
+            background: #ddd;
+        }
+        .records-section {
+            margin: 20px auto;
+            max-width: 800px;
+            background: #ffffff;
+            color: #000;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-y: auto;
+            display: none;
+        }
+        .records-section table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .records-section th, .records-section td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .records-section th {
+            background-color: #f4f4f4;
+            font-weight: bold;
+        }
+        .back-button {
+            position: fixed;
+            top: 10px;         /* Adjust top to prevent overlap */
+            right: 10px;       /* Adjust right to prevent overlap */
+            font-size: 24px;   /* Size of the cross */
+            cursor: pointer;
+            z-index: 1000;     /* Ensure it stays above other elements */
+            background-color: transparent;
+            border: none;
+            color: #ffffff;    /* Set the cross color to white */
+        }
+    </style>
+</head>
+<body>
+    <div id="page-title">Interactive Force-Directed Graph</div>
+    <div id="back-button" class="back-button">❌</div>
+    
+    <div id="graph"></div>
+    <div id="tooltip" class="tooltip"></div>
+    <div id="details" class="details"></div>
+    <div class="select-node-button" id="select-node-button">Select a Node</div>
+    <div class="node-list" id="node-list"></div>
+    <div class="records-section" id="records-section">
+        <h2>Node Records</h2>
+        <table id="records-table">
+            <thead>
+                <tr>
+                    <th>Country</th>
+                    <th>TB Cause</th>
+                    <th>Relationship Type</th>
+                    <th>People Affected</th>
+                    <th>Deaths</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <!-- Embed condition script -->
+    <script>
+        if (window.location.search.includes('embed=true')) {
+            document.getElementById('back-button').style.display = 'none';
+            document.getElementById('select-node-button').style.display = 'none';
+        }
+    </script>
+    
+    <script>
+        document.getElementById("back-button").addEventListener("click", function() {
+        window.location.href = "dashboard.html";  // Use relative path to navigate to dashboard
+    });
+
+        const width = 1500, height = 750;
+        const svg = d3.select("#graph").append("svg")
+            .attr("width", width)
+            .attr("height", height)
+            .call(d3.zoom().on("zoom", (event) => {
+                svg.attr("transform", event.transform);
+            }))
+            .append("g");
+        
+        const colorScale = d3.scaleSequential(d3.interpolateReds);
+        const tooltip = d3.select("#tooltip");
+        const details = d3.select("#details");
+        const nodeListDiv = d3.select("#node-list");
+        const selectNodeButton = d3.select("#select-node-button");
+        const recordsSection = d3.select("#records-section");
+        const recordsTableBody = d3.select("#records-table tbody");
+        
+        let selectedNode = null;
+        let highlightedNodes = new Set();
+        
+        d3.csv("./updated_tb_dataset.csv").then(data => {
+            const nodeIds = new Set();
+            const nodeData = new Map();
+            data.forEach(d => {
+                nodeIds.add(d.country);
+                nodeData.set(d.country, d);
+                nodeIds.add(d['TB Cause']);
+                nodeData.set(d['TB Cause'], d);
+            });
+        
+            const nodes = Array.from(nodeIds).map(id => ({ id: id, data: nodeData.get(id) }));
+            const links = data.map(d => ({
+                source: d.country,
+                target: d['TB Cause'],
+                relationship: d['Relationship Type'],
+                path: d['path']  // Assuming the path column is named 'path' in the CSV
+            }));
+        
+            // Predefined color palette for nodes (you can expand or modify this as needed)
+            const colorPalette = ['#ff6347', '#32cd32', '#8a2be2', '#ff69b4', '#ff1493', '#ff4500', '#ffd700', '#20b2aa', '#00bfff', '#ff8c00'];
+        
+            // Function to assign unique color to each node
+            const colorScale = d3.scaleOrdinal().domain(nodes.map(d => d.id)).range(colorPalette);
+        
+            const simulation = d3.forceSimulation(nodes)
+                .force("link", d3.forceLink(links).id(d => d.id))
+                .force("charge", d3.forceManyBody().strength(-50))
+                .force("center", d3.forceCenter(width / 2, height / 2));
+        
+            const link = svg.append("g")
+                .attr("stroke", "#999")
+                .selectAll("line")
+                .data(links)
+                .join("line")
+                .attr("stroke-width", 2);
+        
+                const linkText = svg.append("g")
+                .selectAll("text")
+                .data(links)
+                .join("text")
+                .attr("dx", 50) // Offset along the x-axis
+                .attr("dy", ".35em") // Vertical offset to center text
+                .attr("text-anchor", "middle") // Center text on its coordinates
+                .style("pointer-events", "none") // Ignore pointer events for better interactivity
+                .text(d => d.label)
+                .style("fill", "#ffffff");
+            
+            simulation.on("tick", () => {
+                // Update link and node positions
+                link.attr("x1", d => d.source.x)
+                    .attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x)
+                    .attr("y2", d => d.target.y);
+            
+                node.attr("cx", d => d.x)
+                    .attr("cy", d => d.y);
+            
+                // Position text on the link
+                linkText.attr("x", d => (d.source.x + d.target.x) / 2)
+                        .attr("y", d => (d.source.y + d.target.y) / 2);
+            });
+            
+            // Implement hover effect for links
+            link.on("mouseover", d => {
+                // Highlight the link and show the label prominently
+                d3.select(this).select("text").style("fill", "lime");
+            })
+            .on("mouseout", d => {
+                // Reset label color on mouse out
+                d3.select(this).select("text").style("fill", "#ffffff");
+            });
+        
+            const node = svg.append("g")
+                .attr("stroke", "#fff")
+                .attr("stroke-width", 1.5)
+                .selectAll("circle")
+                .data(nodes)
+                .join("circle")
+                .attr("r", 5)
+                .attr("fill", d => colorScale(d.id))  // Assign unique color based on the node's id
+                .call(drag(simulation));
+        
+            node.on("mouseover", (event, d) => {
+                tooltip.style("opacity", 1)
+                    .style("left", `${event.pageX + 10}px`)
+                    .style("top", `${event.pageY + 10}px`)
+                    .html(`Node: ${d.id}`);
+            }).on("mouseout", () => {
+                tooltip.style("opacity", 0);
+            }).on("click", (event, d) => {
+                // Highlight the selected node and its adjacent nodes
+                if (selectedNode === d) {
+                    undoSelection();
+                } else {
+                    highlightNode(d);
+                }
+            });
+        
+            simulation.on("tick", () => {
+                link.attr("x1", d => d.source.x)
+                    .attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x)
+                    .attr("y2", d => d.target.y);
+        
+                node.attr("cx", d => d.x)
+                    .attr("cy", d => d.y);
+        
+                // Position the link text (path) at the midpoint of the link
+                linkText.attr("x", d => (d.source.x + d.target.x) / 2)
+                    .attr("y", d => (d.source.y + d.target.y) / 2);
+            });
+        
+            function drag(simulation) {
+                function dragstarted(event) {
+                    if (!event.active) simulation.alphaTarget(0.3).restart();
+                    event.subject.fx = event.subject.x;
+                    event.subject.fy = event.subject.y;
+                }
+        
+                function dragged(event) {
+                    event.subject.fx = event.x;
+                    event.subject.fy = event.y;
+                }
+        
+                function dragended(event) {
+                    if (!event.active) simulation.alphaTarget(0);
+                    event.subject.fx = null;
+                    event.subject.fy = null;
+                }
+        
+                return d3.drag()
+                    .on("start", dragstarted)
+                    .on("drag", dragged)
+                    .on("end", dragended);
+            }
+        
+            // Highlight the selected node and its neighbors
+            const edgeLabels = ['Shared Resources', 'Direct Interaction', 'Mediated Conflict', 'Historical Link', 'Joint Venture'];
+
+            // Function to assign a random, unique label to each edge when highlighted
+            function assignLabels(links) {
+                const shuffledLabels = [...edgeLabels].sort(() => 0.5 - Math.random()); // Shuffle labels
+                links.forEach((link, index) => {
+                    link.label = shuffledLabels[index % shuffledLabels.length]; // Assign labels in a rotated fashion
+                });
+            }
+            
+            function highlightNode(nodeData) {
+                selectedNode = nodeData;
+                highlightedNodes = new Set([nodeData.id]);
+            
+                // Highlight the selected node and its adjacent nodes
+                links.forEach(link => {
+                    if (link.source.id === nodeData.id || link.target.id === nodeData.id) {
+                        highlightedNodes.add(link.source.id);
+                        highlightedNodes.add(link.target.id);
+                    }
+                });
+            
+                // Assign unique labels to only the highlighted links
+                assignLabels(links.filter(link => highlightedNodes.has(link.source.id) && highlightedNodes.has(link.target.id)));
+            
+                // Update node styles
+                node.attr("fill", d => highlightedNodes.has(d.id) ? colorScale(d.id) : "none")
+                    .attr("r", d => highlightedNodes.has(d.id) ? 10 : 0);
+            
+                // Update link styles
+                link.attr("stroke", d => highlightedNodes.has(d.source.id) && highlightedNodes.has(d.target.id) ? "#ff6347" : "none")
+                    .attr("stroke-width", d => highlightedNodes.has(d.source.id) && highlightedNodes.has(d.target.id) ? 3 : 0);
+            
+                // Update link text styles and positions
+                linkText
+                    .attr("opacity", d => highlightedNodes.has(d.source.id) && highlightedNodes.has(d.target.id) ? 1 : 0)
+                    .text(d => d.label);
+            
+                // Show details for the selected node
+                details.style("display", "block").html(`
+                    <strong>Country:</strong> ${nodeData.id}<br>
+                    <strong>Latitude:</strong> ${nodeData.data ? nodeData.data.latitude : 'N/A'}<br>
+                    <strong>Longitude:</strong> ${nodeData.data ? nodeData.data.longitude : 'N/A'}<br>
+                    <strong>People Affected:</strong> ${nodeData.data ? nodeData.data['People Affected'] : 'N/A'}<br>
+                    <strong>Deaths:</strong> ${nodeData.data ? nodeData.data.Deaths : 'N/A'}
+                `);
+            
+                // Display related records
+                const relatedRecords = data.filter(record => record.country === nodeData.id || record['TB Cause'] === nodeData.id);
+                recordsTableBody.selectAll("tr").remove();
+                relatedRecords.forEach(record => {
+                    recordsTableBody.append("tr").html(`
+                        <td>${record.country}</td>
+                        <td>${record['TB Cause']}</td>
+                        <td>${record['Relationship Type']}</td>
+                        <td>${record['People Affected']}</td>
+                        <td>${record.Deaths}</td>
+                    `);
+                });
+            
+                recordsSection.style("display", "block");
+            }
+            
+            // Reset selection when another part of the graph is clicked
+            function undoSelection() {
+                selectedNode = null;
+                highlightedNodes.clear();
+            
+                node.attr("fill", d => colorScale(d.id)).attr("r", 5).style("display", "block");
+                link.attr("stroke", "#999").attr("stroke-width", 2).style("display", "block");
+                linkText.style("opacity", 0); // Hide all path labels
+            
+                details.style("display", "none");
+                recordsSection.style("display", "none");
+            }            
+
+// Populate Node List
+nodes.forEach(node => {
+    const div = nodeListDiv.append("div").text(node.id);
+    div.on("click", () => {
+        const relatedRecords = data.filter(d => d.country === node.id || d['TB Cause'] === node.id);
+
+        recordsTableBody.selectAll("tr").remove(); // Clear previous records
+        relatedRecords.forEach(record => {
+            recordsTableBody.append("tr")
+                .html(`
+                    <td>${record.country}</td>
+                    <td>${record['TB Cause']}</td>
+                    <td>${record['Relationship Type']}</td>
+                    <td>${record['People Affected']}</td>
+                    <td>${record.Deaths}</td>
+                `);
+        });
+
+        recordsSection.style("display", "block");
+    });
+});
+
+// Show/Hide Node List
+selectNodeButton.on("click", () => {
+    const isVisible = nodeListDiv.style("display") === "block";
+    nodeListDiv.style("display", isVisible ? "none" : "block");
+});
+}).catch(error => console.error("Error loading data:", error));
+
+    </script>
+</body>
+</html>

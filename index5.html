@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hierarchical Sunburst Chart</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: white;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            flex-direction: column;
+            text-align: center;
+        }
+        h1 {
+            font-size: 40px;
+            margin-top: 40px; 
+            margin-bottom: 35px;  /* Reduced margin-bottom */
+        }
+        #tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 8px;
+            border-radius: 4px;
+            pointer-events: none;
+            opacity: 0;
+        }
+        .breadcrumb {
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .filter {
+            font-size: 14px;
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 20px;  /* Increased bottom margin to add space between filters and chart */
+        }
+        select {
+            margin: 0px;
+        }
+        .back-button {
+            position: fixed;
+            top: 10px;         /* Adjust top to prevent overlap */
+            right: 10px;       /* Adjust right to prevent overlap */
+            font-size: 24px;   /* Size of the cross */
+            cursor: pointer;
+            z-index: 1000;     /* Ensure it stays above other elements */
+            background-color: transparent;
+            border: none;
+            color: #ffffff;    /* Set the cross color to white */
+        }
+    </style>
+</head>
+<body>
+    <h1>Hierarchical Sunburst Chart</h1>
+    <div id="back-button" class="back-button">❌</div>
+    <div class="breadcrumb" id="breadcrumb">Root</div>
+    <div class="filter">
+        <label for="year-filter">Select Year:</label>
+        <select id="year-filter">
+            <option value="">All Years</option>
+        </select>
+        <label for="country-filter">Select Country:</label>
+        <select id="country-filter">
+            <option value="">All Countries</option>
+        </select>
+    </div>
+    <div id="chart"></div>
+    <div id="tooltip"></div>
+    <!-- Embed condition script -->
+    <script>
+        if (window.location.search.includes('embed=true')) {
+            document.getElementById('back-button').style.display = 'none';
+        }
+    </script>
+    
+    <script>
+        document.getElementById("back-button").addEventListener("click", function() {
+        window.location.href = "dashboard.html";  // Use relative path to navigate to dashboard
+    });
+        const width = 1500;
+        const height = 750;
+        const radius = Math.min(width, height) / 2;
+        const color = d3.scaleOrdinal(d3.schemeCategory10);
+
+        const tooltip = d3.select("#tooltip");
+        const breadcrumb = d3.select("#breadcrumb");
+        const yearFilter = d3.select("#year-filter");
+        const countryFilter = d3.select("#country-filter");
+        const svg = d3.select("#chart").append("svg")
+            .attr("width", width)
+            .attr("height", height)
+            .append("g")
+            .attr("transform", `translate(${width / 2},${height / 2})`);
+
+        d3.csv('./updated_tb_dataset.csv').then(data => {
+            const years = Array.from(new Set(data.map(d => d.year))).sort();
+            const countries = Array.from(new Set(data.map(d => d.country))).sort();
+
+            yearFilter.selectAll("option")
+                .data(years)
+                .enter().append("option")
+                .text(d => d)
+                .attr("value", d => d);
+
+            countryFilter.selectAll("option")
+                .data(countries)
+                .enter().append("option")
+                .text(d => d)
+                .attr("value", d => d);
+
+            function updateSunburst() {
+                const selectedYear = yearFilter.node().value;
+                const selectedCountry = countryFilter.node().value;
+                const filteredData = data.filter(d =>
+                    (selectedYear === "" || d.year === selectedYear) &&
+                    (selectedCountry === "" || d.country === selectedCountry)
+                );
+
+                const rootData = {
+                    name: "Root",
+                    children: Array.from(d3.group(filteredData, d => d['TB Cause']), ([key, values]) => ({
+                        name: key,
+                        children: Array.from(d3.group(values, d => d['Relationship Type']), ([key, values]) => ({
+                            name: key,
+                            children: values.map(d => ({
+                                name: d.Path,
+                                value: +d['Deaths']
+                            }))
+                        }))
+                    }))
+                };
+
+                const root = d3.hierarchy(rootData).sum(d => d.value);
+                const partition = d3.partition()
+                    .size([2 * Math.PI, radius]);
+
+                partition(root);
+
+                svg.selectAll("path").remove();
+                const arcs = svg.selectAll("path")
+                    .data(root.descendants())
+                    .enter().append("path")
+                    .attr("d", d3.arc()
+                        .startAngle(d => d.x0)
+                        .endAngle(d => d.x1)
+                        .innerRadius(d => d.y0)
+                        .outerRadius(d => d.y1))
+                    .attr("fill", d => color(d.parent ? d.parent.data.name : d.data.name))
+                    .on("mouseover", (event, d) => {
+                        tooltip.style("opacity", 1)
+                               .style("left", `${event.pageX + 10}px`)
+                               .style("top", `${event.pageY + 10}px`)
+                               .html(`TB Cause: ${d.parent ? d.parent.data.name : 'Root'}<br>Relationship Type: ${d.data.name}<br>Path: ${d.data.name}<br>People Died: ${d.value}`);
+                    })
+                    .on("mouseout", () => tooltip.style("opacity", 0))
+                    .on("click", (event, d) => zoomIn(d));
+
+                arcs.append("text")
+                    .attr("transform", function(d) {
+                        const angle = (d.x0 + d.x1) / 2;
+                        const radius = (d.y0 + d.y1) / 2;
+                        return `translate(${d3.arc().centroid(d)}) rotate(${angle * 180 / Math.PI - 90})`;
+                    })
+                    .attr("dy", "0.35em")
+                    .attr("text-anchor", "middle")
+                    .text(d => d.data.name.length > 10 ? d.data.name.substring(0, 10) + "..." : d.data.name);
+
+                breadcrumb.html(`Root > ${rootData.name}`);
+            }
+
+            function zoomIn(d) {
+                const focus = d;
+
+                const transition = svg.transition().duration(750);
+
+                const arc = d3.arc()
+                    .startAngle(d => d.x0)
+                    .endAngle(d => d.x1)
+                    .innerRadius(d => d.y0)
+                    .outerRadius(d => d.y1);
+
+                transition
+                    .selectAll("path")
+                    .attrTween("d", function (d) {
+                        const i = d3.interpolate(d, focus);
+                        return t => arc(i(t));
+                    });
+            }
+
+            yearFilter.on("change", updateSunburst);
+            countryFilter.on("change", updateSunburst);
+
+            updateSunburst(); // Initialize the Sunburst chart
+        });
+    </script>
+</body>
+</html>
